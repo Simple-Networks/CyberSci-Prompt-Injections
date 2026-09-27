@@ -1,6 +1,6 @@
 # CyberSci Crash Course on Prompt Injections
 
-A **deliberately vulnerable** FastAPI service that fronts a [llama.cpp](https://github.com/ggml-org/llama.cpp)
+A **deliberately vulnerable** FastAPI service that fronts a [llama.cpp](https://github.com/ggml-org/llama.cpp) server.
 
 ## Setup
 
