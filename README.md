@@ -10,7 +10,7 @@ docker compose up --build   # first run downloads ~750MB of GGUF
 ```
 
 Compose starts two services: `llama`, the vendored `llama-b10909` build serving
-`LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M` and `app`, the FastAPI service. 
+[LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF) and `app`, the FastAPI service. 
 
 Without Docker, a two-terminal path still works: `uv sync`, start a tool-capable
 llama.cpp server on `http://localhost:8080`, then `uv run main.py`.
