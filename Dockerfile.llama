@@ -1,0 +1,19 @@
+# llama.cpp server, built from the llama-b10909 release vendored in this repo so every
+# student runs the exact binary the lab was validated against.
+#
+# ubuntu:24.04 because llama-server needs glibc >= 2.34 and OpenSSL 3 (libssl.so.3 /
+# libcrypto.so.3). It does not link libcurl -- this build downloads -hf models with
+# llama.cpp's built-in HTTP client.
+FROM ubuntu:24.04@sha256:224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca03082da254
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+
+# The binaries find their sibling .so files via $ORIGIN RPATH, so copying the directory
+# wholesale is enough -- no LD_LIBRARY_PATH needed.
+WORKDIR /opt/llama
+COPY llama-b10909/ /opt/llama/
+
+# No ENTRYPOINT/CMD on purpose: the model and sampling flags live in docker-compose.yml
+# where students can read them.

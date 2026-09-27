@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberSci LLM Crash Course</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1c1f26;
+    --line: #2c313b;
+    --text: #e6e8ec;
+    --muted: #9aa3b2;
+    --accent: #6ea8fe;
+    --ok: #4ade80;
+    --bad: #f87171;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .warn {
+    border: 1px solid #7a4a12; background: #2a1d0c; color: #f2c078;
+    padding: 10px 14px; border-radius: 8px; margin: 0 0 24px; font-size: 14px;
+  }
+  section {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px; margin-bottom: 20px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  input, select, textarea, button {
+    font: inherit; color: var(--text); background: #12141a;
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+  }
+  input, textarea { width: 100%; }
+  textarea { font-family: var(--mono); font-size: 13px; min-height: 84px; resize: vertical; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .row > .grow { flex: 1 1 320px; }
+  button {
+    background: var(--accent); border-color: var(--accent); color: #10131a;
+    font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: default; }
+  .status { margin-top: 12px; font-size: 14px; color: var(--muted); min-height: 1.5em; }
+  .status.ok { color: var(--ok); }
+  .status.bad { color: var(--bad); }
+  pre {
+    font-family: var(--mono); font-size: 13px; white-space: pre-wrap; word-break: break-word;
+    background: #101219; border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 12px; margin: 0; max-height: 420px; overflow: auto;
+  }
+  .out { margin-top: 16px; }
+  .out > * + * { margin-top: 14px; }
+  .src { font-family: var(--mono); font-size: 13px; color: var(--muted); word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1>CyberSci LLM Crash Course</h1>
+  <p class="sub">Browser console for the lab routes. API docs at <a href="/docs" style="color:var(--accent)">/docs</a>.</p>
+
+  <section>
+    <h2>Process a URL</h2>
+    <form id="process-form">
+      <div class="row">
+        <div class="grow">
+          <label for="url">URL</label>
+          <input id="url" name="url" type="url" required placeholder="https://example.com/page">
+        </div>
+        <div>
+          <label for="mode">Mode</label>
+          <select id="mode" name="mode">
+            <option value="auto">auto</option>
+            <option value="summarize">summarize</option>
+          </select>
+        </div>
+        <div><button id="process-btn" type="submit">Process</button></div>
+      </div>
+    </form>
+    <div class="status" id="process-status"></div>
+    <div class="out" id="process-out"></div>
+  </section>
+
+  <section>
+    <h2>Verify an admin JWT</h2>
+    <form id="verify-form">
+      <label for="token">Token</label>
+      <textarea id="token" name="token" required placeholder="eyJhbGciOiJIUzI1NiIs..." spellcheck="false"></textarea>
+      <div class="row" style="margin-top:12px">
+        <button id="verify-btn" type="submit">Verify</button>
+      </div>
+    </form>
+    <div class="status" id="verify-status"></div>
+  </section>
+</main>
+
+<script>
+  // Every value below can be attacker-controlled (that is the point of the lab), so it
+  // is only ever inserted with textContent — never innerHTML.
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  };
+
+  const setStatus = (node, text, kind) => {
+    node.className = "status" + (kind ? " " + kind : "");
+    node.textContent = text;
+  };
+
+  // Returns the parsed JSON body along with the response, so callers can read `detail`
+  // out of FastAPI's error payloads.
+  async function postJSON(path, payload) {
+    const resp = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    let data = null;
+    try {
+      data = await resp.json();
+    } catch {
+      /* non-JSON body (e.g. a proxy error page) */
+    }
+    return { resp, data };
+  }
+
+  const errorText = (resp, data) => {
+    const detail = data && data.detail;
+    if (typeof detail === "string") return detail;
+    if (detail) return JSON.stringify(detail);
+    return "HTTP " + resp.status + " " + resp.statusText;
+  };
+
+  const processForm = document.getElementById("process-form");
+  const processBtn = document.getElementById("process-btn");
+  const processStatus = document.getElementById("process-status");
+  const processOut = document.getElementById("process-out");
+
+  processForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const url = document.getElementById("url").value.trim();
+    const mode = document.getElementById("mode").value;
+
+    processOut.replaceChildren();
+    processBtn.disabled = true;
+    setStatus(processStatus, "Running… the tool loop can take a while.");
+
+    try {
+      const { resp, data } = await postJSON("/process", { url, mode });
+      if (!resp.ok) {
+        setStatus(processStatus, errorText(resp, data), "bad");
+        return;
+      }
+      setStatus(processStatus, "Done.", "ok");
+      renderProcess(data);
+    } catch (err) {
+      setStatus(processStatus, "Request failed: " + err, "bad");
+    } finally {
+      processBtn.disabled = false;
+    }
+  });
+
+  function renderProcess(data) {
+    const parts = [];
+
+    const source = el("div");
+    source.append(el("h3", null, "Source URL"), el("div", "src", data.source_url || ""));
+    parts.push(source);
+
+    const result = el("div");
+    result.append(el("h3", null, "Result"), el("pre", null, data.result || ""));
+    parts.push(result);
+
+    // The tool-call trace is intentionally not returned by /process — it is logged on
+    // the server. Only the source URL and the model's final answer are shown here.
+    processOut.replaceChildren(...parts);
+  }
+
+  const verifyForm = document.getElementById("verify-form");
+  const verifyBtn = document.getElementById("verify-btn");
+  const verifyStatus = document.getElementById("verify-status");
+
+  verifyForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const token = document.getElementById("token").value.trim();
+
+    verifyBtn.disabled = true;
+    setStatus(verifyStatus, "Verifying…");
+
+    try {
+      const { resp, data } = await postJSON("/admin/verify", { token });
+      if (!resp.ok) {
+        setStatus(verifyStatus, errorText(resp, data), "bad");
+        return;
+      }
+      setStatus(verifyStatus, (data && data.detail) || "OK", "ok");
+    } catch (err) {
+      setStatus(verifyStatus, "Request failed: " + err, "bad");
+    } finally {
+      verifyBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

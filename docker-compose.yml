@@ -1,0 +1,48 @@
+services:
+  llama:
+    build:
+      context: .
+      dockerfile: Dockerfile.llama
+    command: >
+      ./llama-server
+      -hf LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q4_K_M
+      --jinja
+      --ctx-size 32768
+      --temp 0.1
+      --top-k 50
+      --top-p 0.1
+      --repeat-penalty 1.05
+      --host 0.0.0.0
+      --port 8080
+      -lv 4
+    environment:
+      LLAMA_CACHE: /models
+    # Without a TTY the download progress bar (which redraws with \r) is buffered into
+    # one unreadable line, so a cold boot looks like a hang.
+    tty: true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://llama:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      # Generous: a cold first boot downloads ~750MB before the model even loads.
+      start_period: 300s
+    volumes:
+      - llama-models:/models
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    ports:
+      - "8000:8000"
+    environment:
+      LLAMA_BASE_URL: "http://llama:8080/v1"
+    depends_on:
+      llama:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  llama-models:
